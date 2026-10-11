@@ -1,0 +1,242 @@
+# LedgerFlow — Application Handoff
+
+**Reviewed:** 11 October 2026  
+**Source:** `project-bolt-sb1-tz8sgpek.zip` (source code inspection)  
+**Status:** Source-level handoff; runtime, deployment and financial correctness **not verified**.  
+**Purpose:** Enable a new developer or team to operate, audit and extend the application safely.
+
+## 1. Executive overview
+
+LedgerFlow is a South African-focused bookkeeping and payroll web application. It supports company setup, a chart of accounts, manual journal entries, customers, suppliers, invoices, employees, payroll, financial reporting, SARS summaries, and an API-key based integration endpoint.
+
+**Technology:** React 18, TypeScript, Vite 5, Tailwind CSS 3, `@supabase/supabase-js` 2, Supabase Auth/Postgres/Row Level Security (RLS), and a Supabase Deno Edge Function. The codebase is a single-page frontend with direct browser-to-Supabase reads/writes. It does not use a conventional standalone Node/Express backend.
+
+**Audience taxonomy**
+
+| Audience | Start here |
+| --- | --- |
+| Developer | Sections 2–5 and 9 |
+| DevOps/deployer | Sections 3, 4 and 8 |
+| Security reviewer | Sections 6 and 7 |
+| Accounting/payroll reviewer | Sections 5 and 7 |
+| Product owner | Sections 1, 5 and 10 |
+
+## 2. Repository map
+
+```text
+project/
+├── .bolt/                          # Bolt project metadata
+├── .env                            # Local Supabase client configuration (do not commit secrets)
+├── package.json                    # Scripts and dependencies
+├── index.html
+├── vite.config.ts
+├── tailwind.config.js
+├── src/
+│   ├── main.tsx                    # React entry point
+│   ├── App.tsx                     # Auth/company gating; navigation state
+│   ├── components/
+│   │   ├── AppLayout.tsx           # Sidebar/application shell
+│   │   └── ui.tsx                  # Shared UI controls
+│   ├── contexts/AuthContext.tsx    # Supabase auth/session actions
+│   ├── hooks/useCompany.ts         # Current user's company lookup
+│   ├── lib/
+│   │   ├── supabase.ts            # Browser Supabase client
+│   │   ├── saTax.ts               # PAYE, UIF, SDL, COIDA calculations
+│   │   └── format.ts              # Formatting helpers
+│   ├── screens/                    # Feature pages listed in section 5
+│   └── types/index.ts             # Domain interfaces
+└── supabase/
+    ├── config.toml                # Edge Function JWT verification disabled
+    ├── migrations/
+    │   └── 20261011152543_create_core_accounting_schema.sql
+    └── functions/ledgerflow-api/index.ts
+```
+
+The frontend uses a `@/` import alias. Navigation is implemented by local `page` state in `App.tsx`, **not** URL routes or React Router; reloading a selected page returns to the initial app view.
+
+## 3. Local setup
+
+**Prerequisites:** Compatible Node.js LTS, npm, an accessible Supabase project and the database schema in section 4. Versions of Node and the Supabase CLI are not pinned in the archive.
+
+```bash
+cd project
+npm ci
+```
+
+Create `project/.env` with the **public browser** project values (the archive already contains an `.env`; replace with values for your own environment):
+
+```dotenv
+VITE_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+VITE_SUPABASE_ANON_KEY=YOUR_SUPABASE_PUBLISHABLE_OR_ANON_KEY
+```
+
+Then:
+
+```bash
+npm run dev          # Vite development server
+npm run typecheck    # TypeScript checking
+npm run lint         # ESLint
+npm run build        # Production build; output dist/
+npm run preview      # Preview build
+```
+
+The archive does not contain installed dependencies. **These commands were not executed as part of this handoff.** Environment values in the uploaded `.env` were deliberately not reproduced. `VITE_` values are bundled into the frontend and **must never be service-role credentials**.
+
+## 4. Supabase setup and deployment
+
+1. Create or identify the correct Supabase project; configure Auth and allowed redirect URLs.
+2. Apply `supabase/migrations/20261011152543_create_core_accounting_schema.sql` using a reviewed migration process. Back up any existing production database first.
+3. Confirm all defined RLS policies are active; test cross-user isolation in every table and relation.
+4. Configure the Edge Function's `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` **server-side only**. The function uses these values and should never expose the service key in the browser or documentation.
+5. Deploy `supabase/functions/ledgerflow-api/index.ts` as the `ledgerflow-api` function. Supabase configuration sets `verify_jwt = false`; this makes robust API-key authorization inside the function especially important.
+6. Deploy the built `dist/` frontend to an HTTPS static host supporting SPA delivery.
+7. Set up observability, backup/restore, access control, environments, and incident procedures. None are documented in the archive.
+
+Illustrative Supabase CLI commands (configure your project ID and CLI first):
+
+```bash
+supabase link --project-ref YOUR_PROJECT_REF
+supabase db push
+supabase functions deploy ledgerflow-api --no-verify-jwt
+```
+
+Do **not** deploy the API function to a live environment before addressing the API issues in section 7.
+
+## 5. Functional inventory
+
+| Area | Main file | Observed capabilities | Notes |
+| --- | --- | --- | --- |
+| Login & registration | `AuthScreen.tsx`, `AuthContext.tsx` | Email/password login and registration; persisted sessions | Supabase Auth |
+| Company onboarding | `CompanySetup.tsx` | Company details, banking, tax IDs, opening chart of accounts | Company presence gates app |
+| Dashboard | `Dashboard.tsx` | Financial and payroll overview queries | Calculated from database records |
+| Chart of accounts | `Accounts.tsx` | Create/edit/delete accounts | Codes used in downstream journal posting |
+| Journals | `Journal.tsx` | Create/delete entries and debit/credit lines | Verify balance validation and atomicity |
+| Customers | `Customers.tsx` | Customer master-data CRUD | User-scoped via RLS |
+| Suppliers | `Suppliers.tsx` | Supplier master-data CRUD | No supplier-bill workflow observed |
+| Invoicing | `Invoices.tsx` | Create invoice/items; post journal; mark paid and post receipt journal | Several sequential DB writes |
+| Employees | `Employees.tsx` | Employee master-data CRUD | Contains sensitive personal information |
+| Payroll | `Payroll.tsx` | Generate, approve, mark paid, reverse payslips | Tax engine in `saTax.ts` |
+| Financial reports | `Reports.tsx` | Trial balance, income statement, balance sheet | Report accuracy requires review |
+| SARS summaries | `SARS.tsx` | EMP201, VAT201, IRP5 summaries | Not evidence of official SARS submission |
+| API access | `ApiAccess.tsx` | Generate, list, revoke API keys; permissions selection | Permission enforcement needs work |
+| Settings | `Settings.tsx` | Edit company information | Company data table |
+
+### Workflow: Authentication and first use
+
+```text
+Open app → Supabase session check → Sign in/up if required
+  → Query companies → Company setup if no company
+  → Seed initial accounts if needed → Main dashboard
+```
+
+### Workflow: Invoice
+
+```text
+Choose customer + line items → Insert invoices row
+  → Insert invoice_items → Look up accounts 1100/4000/2200
+  → Insert journal_entries + journal_lines
+  → Mark invoice paid → Look up accounts 1000/1100
+  → Insert receipt journal and lines
+```
+
+These steps are currently separate client-side operations; failure in the middle may create partial or inconsistent accounting records. No bank reconciliation or payment provider integration was identified.
+
+### Workflow: Payroll
+
+```text
+Select employees/period → Calculate amounts in saTax.ts
+  → Insert payslips → Approve → Mark paid
+  → Post payroll journal lines → Optional reversal state
+```
+
+Check for duplicate runs, invalid transitions, posting consistency and correct treatment of reversed payslips before using actual wages.
+
+## 6. Data model and API
+
+**Tables defined by the migration:** `companies`, `accounts`, `journal_entries`, `journal_lines`, `customers`, `suppliers`, `invoices`, `invoice_items`, `employees`, `payslips`, `payslip_earnings`, `api_keys`. Most tables use a `user_id` associated with Supabase Auth and have per-user RLS policies. Review relation ownership, unique constraints, foreign keys and deletion behaviour before multi-tenant production use.
+
+**Core relationships (conceptual):** accounts ← journal_lines → journal_entries; customers ← invoices ← invoice_items; employees ← payslips ← payslip_earnings; users → all scoped records. Exact columns and constraints are authoritative in the SQL migration and `src/types/index.ts`.
+
+**Function:** `ledgerflow-api`  
+**Typical URL:** `https://YOUR_PROJECT.supabase.co/functions/v1/ledgerflow-api/{path}`  
+**Auth:** `Authorization: Bearer lf_...` (key is SHA-256-hashed and looked up in `api_keys`). The function uses a Supabase service-role database client.
+
+| Verb | Path | Observed purpose |
+| --- | --- | --- |
+| GET | `/health` | Health response (requires valid API key) |
+| GET | `/accounts`, `/journal`, `/invoices`, `/employees`, `/customers`, `/suppliers`, `/payslips` | List user's records |
+| POST | Same paths | Insert a record |
+| GET | `/reports/trial-balance` | Account balances |
+| GET | `/reports/income-statement` | Income and expenses |
+| GET | `/reports/balance-sheet` | Assets, liabilities, equity |
+| GET | `/sars/emp201?month=M&year=Y` | Payroll tax summary |
+| GET | `/sars/vat201?month=M&year=Y` | Invoice output-VAT summary |
+| GET | `/payroll/run?month=M&year=Y` | Read payslips for a period; **does not execute payroll** |
+
+Although CORS lists PUT and DELETE, the function only implements GET and POST paths. Permission names are present in the UI but are not checked by the function. The endpoint body currently accepts a caller-controlled object for insertion, with `user_id` forcibly replaced by the authenticated user's ID; field-level/related-record validation should be added.
+
+Illustrative request, *after security remediation*:
+
+```bash
+curl -H 'Authorization: Bearer YOUR_LEDGERFLOW_API_KEY' \
+  'https://YOUR_PROJECT.supabase.co/functions/v1/ledgerflow-api/accounts'
+```
+
+## 7. Risks and known limitations
+
+The following are **code-observed concerns**, not results of penetration testing or live incident reports.
+
+| Priority | Category | Finding / action |
+| --- | --- | --- |
+| **Critical** | API authorization | API key `permissions` are stored but not enforced. A read-only key can call POST routes. Enforce per-route authorization before release. |
+| **High** | API key security | `ApiAccess.tsx` generates key material using `Math.random()`. Switch to `crypto.getRandomValues()` or server-generated CSPRNG keys; verify uniqueness, expiration and rate limits. |
+| **High** | Service-role safety | Edge Function bypasses RLS with the service-role client. Explicitly verify record ownership and foreign-key relationships for all reads/writes; validate payload schemas and scope nested objects. |
+| **High** | Financial atomicity | Invoices, receipts and payroll journal posts use multiple browser-side writes without database transactions. Move posting to audited transactional Postgres functions / server actions with idempotency keys. |
+| **High** | Tax accuracy | `saTax.ts` explicitly uses **2024/2025** SARS tax tables. Revalidate current rates, thresholds, rebates and exceptions with a qualified South African payroll/tax specialist. Do not treat results as filing-ready. |
+| **High** | VAT completeness | `SARS.tsx` and API VAT201 calculation set input VAT to **zero**. No purchase-invoice/input-VAT flow was found. VAT201 is incomplete for many real businesses. |
+| **High** | Report correctness | UI reports aggregate only accounts with journal lines and use opening balances; API reports omit opening balances. Reconcile definitions and check sign conventions/trial balance math against test fixtures. |
+| **Medium** | Auditability | Journal entries can be deleted through UI, and a formal immutable audit trail/closing period was not identified. Implement accounting controls, reversal entries and logging. |
+| **Medium** | Workflow naming | GET `/payroll/run` retrieves existing payslips rather than starting payroll. Rename or implement safely. |
+| **Medium** | Quality assurance | No automated test files or CI pipeline were present in the archive. Add unit/integration/e2e tests and automated release gates. |
+| **Medium** | App routing | Navigation lives in React state; deep linking and browser history are unsupported. |
+| **Medium** | Product maturity | Package version is `0.0.0` and name is `vite-react-typescript-starter`; no changelog or documented production release history was found. |
+
+## 8. Release and operations checklist
+
+- [ ] Establish ownership, repo access, licensing, production environment and release policy.
+- [ ] Remove or rotate any mistakenly shared secrets and use secret management.
+- [ ] Verify Supabase Auth, RLS, user separation and related-record ownership with two distinct test users.
+- [ ] Fix API permission enforcement and secure key creation before deployment.
+- [ ] Validate accounting journal balancing, transaction rollback, duplicate protection and reversals.
+- [ ] Update SARS rates and use accounting/payroll subject-matter review with representative calculations.
+- [ ] Test invoices, partial failures, duplicate payments, payroll reruns and reporting reconciliations.
+- [ ] Add automated tests, backup restoration, logs, monitoring and error alerts.
+- [ ] Execute `npm ci`, `npm run typecheck`, `npm run lint`, `npm run build` in CI.
+- [ ] Conduct acceptance testing and sign-off; document rollback process.
+
+## 9. Suggested testing taxonomy
+
+| Level | Tests |
+| --- | --- |
+| Unit | Tax bracket boundaries, UIF cap, SDL/COIDA, decimal rounding, report signs |
+| Database | RLS across two users, cross-user FK abuse, referential integrity, uniqueness |
+| Integration | Invoice → invoice items → balanced journals; payroll → payslip → journal; key permissions |
+| Failure | Network interrupted between writes; duplicate submits; expired/revoked keys; repeated payroll runs |
+| End-to-end | Sign-up → company → accounts → invoice → paid → reports; employee → payroll → SARS summary |
+| Compliance | Current SARS rules and tax-period boundaries; privacy and retention requirements |
+
+## 10. Recommended development order
+
+1. **Blockers:** Harden API access; eliminate partial posting; verify user/tenant boundaries.
+2. **Correctness:** Review tax engine, VAT201 scope, chart-of-accounts rules and report reconciliations.
+3. **Reliability:** Add tests, audit logs, error handling and idempotent workflows.
+4. **Operations:** Add environments, CI/CD, backup/restore, monitoring and release procedures.
+5. **Enhancements:** Supplier billing, input VAT, bank reconciliation, export/submission integrations and proper URL routing, based on product priorities.
+
+## 11. Open handoff questions
+
+Who owns the Supabase project and production access? What is the intended single-user versus multi-company tenancy model? Is this a prototype or live financial system? What are the required SARS filing periods and supported company types? Are historical data migration, audit logs, customer communication and data retention required? Are there integration consumers already using the API? Where are designs, tickets and acceptance criteria kept?
+
+## 12. Evidence and scope
+
+All observations are based on the provided ZIP's source files, particularly `src/App.tsx`, `src/screens/*`, `src/lib/saTax.ts`, `supabase/functions/ledgerflow-api/index.ts`, and the SQL migration. No database connection, operational logs, automated test run, production inspection or independent tax-rule verification took place. Treat this document as a technical onboarding baseline, **not** a certification of production readiness.
