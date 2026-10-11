@@ -1,6 +1,6 @@
 /**
  * South African Payroll Tax Calculations
- * Based on SARS 2024/2025 tax year tables and SA labour legislation.
+ * Based on SARS 2026/2027 tax year tables and SA labour legislation.
  *
  * - PAYE: Progressive tax brackets per SARS tax tables
  * - UIF: 1% of gross remuneration (employee), 1% (employer), capped
@@ -10,28 +10,23 @@
  * These rates are configurable and should be updated annually per SARS publications.
  */
 
-// SARS 2024/2025 tax year brackets (annual)
+// SARS 2026/2027 individual rates (1 March 2026 to 28 February 2027).
+// Source: https://www.sars.gov.za/guide-for-employers-in-respect-of-employees-tax-2027/
 const TAX_BRACKETS = [
-  { min: 0, max: 237100, rate: 0.18, baseTax: 0 },
-  { min: 237101, max: 370500, rate: 0.26, baseTax: 42678 },
-  { min: 370501, max: 512800, rate: 0.31, baseTax: 77362 },
-  { min: 512801, max: 673000, rate: 0.36, baseTax: 121475 },
-  { min: 673001, max: 857900, rate: 0.39, baseTax: 179147 },
-  { min: 857901, max: 1817000, rate: 0.41, baseTax: 251258 },
-  { min: 1817001, max: Infinity, rate: 0.45, baseTax: 644489 },
+  { min: 0, max: 245100, rate: 0.18, baseTax: 0 },
+  { min: 245100, max: 383100, rate: 0.26, baseTax: 44118 },
+  { min: 383100, max: 530200, rate: 0.31, baseTax: 79998 },
+  { min: 530200, max: 695800, rate: 0.36, baseTax: 125599 },
+  { min: 695800, max: 887000, rate: 0.39, baseTax: 185215 },
+  { min: 887000, max: 1878600, rate: 0.41, baseTax: 259783 },
+  { min: 1878600, max: Infinity, rate: 0.45, baseTax: 666339 },
 ];
-
-// Primary rebate (2024/2025)
-const PRIMARY_REBATE = 17235;
-// Secondary rebate (65+): 9515
-const SECONDARY_REBATE = 9515;
-// Tertiary rebate (75+): 3145
-const TERTIARY_REBATE = 3145;
-
-// Tax threshold (annual)
-const TAX_THRESHOLD_AGE_UNDER_65 = 95750;
-const TAX_THRESHOLD_AGE_65_TO_74 = 148217;
-const TAX_THRESHOLD_AGE_75_PLUS = 165689;
+const PRIMARY_REBATE = 17820;
+const SECONDARY_REBATE = 9765;
+const TERTIARY_REBATE = 3249;
+const TAX_THRESHOLD_AGE_UNDER_65 = 99000;
+const TAX_THRESHOLD_AGE_65_TO_74 = 153250;
+const TAX_THRESHOLD_AGE_75_PLUS = 171300;
 
 // UIF: 1% capped at earnings ceiling
 const UIF_RATE = 0.01;
@@ -85,14 +80,8 @@ export function calculateAnnualTax(annualTaxableIncome: number, age: number = 30
     return 0;
   }
 
-  let tax = 0;
-  for (const bracket of TAX_BRACKETS) {
-    if (annualTaxableIncome > bracket.min) {
-      const taxableInBracket = Math.min(annualTaxableIncome, bracket.max) - bracket.min + 1;
-      tax = bracket.baseTax + taxableInBracket * bracket.rate;
-      break;
-    }
-  }
+  const bracket = [...TAX_BRACKETS].reverse().find((b) => annualTaxableIncome > b.min)!;
+  let tax = bracket.baseTax + (annualTaxableIncome - bracket.min) * bracket.rate;
 
   tax -= rebate;
   return Math.max(0, Math.round(tax));
@@ -109,17 +98,16 @@ export function calculateMonthlyPAYE(monthlyGross: number, age: number = 30, ded
 
   // Pension contributions are deductible (capped at 27.5% of gross, max R350k/year)
   const pensionDeductible = Math.min(annualPension, Math.min(annualGross * 0.275, 350000));
-  // Provident fund contributions are NOT deductible for PAYE (only employer portion)
+  // FIXME: Retirement contribution treatment needs practitioner validation; not all cases covered.
   // Medical aid tax credits are handled separately via rebates
-  const _ = annualProvident; // Provident is not deducted from taxable income for PAYE
+  void annualProvident; // Placeholder: full retirement-fund rules not yet supported
 
   const annualTaxable = annualGross - pensionDeductible;
   let annualTax = calculateAnnualTax(annualTaxable, age);
 
-  // Medical aid tax credit (R364 per month for main member, R364 for first dependent, R246 per additional)
-  // Simplified: credit = monthlyMedicalAid * 0.66 (approximate portion that is tax credit)
-  // In practice, the medical aid tax credit is a fixed amount based on number of dependants
-  // We use the contribution as a credit directly for simplicity
+  // Medical scheme tax credit is based on member/dependant count (2027: R376/R376/R254).
+  // The existing input only holds a contribution amount; do not guess member counts.
+  // SAFETY: payroll approval must await a full tax-rule implementation and validation.
   const medicalAidTaxCredit = annualMedicalAid * 0; // Already handled via rebates in real SARS calc
 
   // Additional rebate override

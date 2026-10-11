@@ -71,21 +71,21 @@ export default function Journal() {
       source: 'manual',
     };
 
-    const { data: entry, error } = await supabase.from('journal_entries').insert(payload).select().single();
-    if (error || !entry) return;
-
     const lineRows = lines
       .filter((l) => l.account_id && (parseFloat(l.debit) > 0 || parseFloat(l.credit) > 0))
       .map((l) => ({
-        journal_entry_id: entry.id,
         account_id: l.account_id,
         debit: parseFloat(l.debit) || 0,
         credit: parseFloat(l.credit) || 0,
         description: l.description || null,
       }));
-
-    if (lineRows.length > 0) {
-      await supabase.from('journal_lines').insert(lineRows);
+    const { error } = await supabase.rpc('post_journal_atomic', {
+      p_entry: payload,
+      p_lines: lineRows,
+    });
+    if (error) {
+      alert(`Journal not saved: ${error.message}`);
+      return;
     }
 
     setShowModal(false);

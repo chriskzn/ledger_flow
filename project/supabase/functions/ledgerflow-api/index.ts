@@ -1,3 +1,4 @@
+import { hasPermission, isKeyExpired } from "./permissions.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.57.4";
 
 const corsHeaders = {
@@ -16,7 +17,9 @@ async function hashKey(key: string): Promise<string> {
   return Array.from(new Uint8Array(hashBuffer)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-async function authenticate(req: Request): Promise<string | null> {
+type Principal = { userId: string; permissions: string[] };
+
+async function authenticate(req: Request): Promise<Principal | null> {
   const authHeader = req.headers.get("Authorization");
   if (!authHeader || !authHeader.startsWith("Bearer ")) return null;
   const apiKey = authHeader.replace("Bearer ", "").trim();
@@ -26,13 +29,14 @@ async function authenticate(req: Request): Promise<string | null> {
   const adminClient = createClient(supabaseUrl, serviceRoleKey);
   const { data: keyRecord } = await adminClient
     .from("api_keys")
-    .select("user_id, permissions, is_active")
+    .select("user_id, permissions, is_active, expires_at")
     .eq("key_hash", keyHash)
     .eq("is_active", true)
     .maybeSingle();
 
-  if (!keyRecord) return null;
-  return keyRecord.user_id;
+  if (!keyRecord || isKeyExpired(keyRecord.expires_at)) return null;
+  const permissions = Array.isArray(keyRecord.permissions) ? keyRecord.permissions : [];
+  return { userId: keyRecord.user_id, permissions };
 }
 
 Deno.serve(async (req: Request) => {
@@ -41,14 +45,22 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const userId = await authenticate(req);
-    if (!userId) {
+    const principal = await authenticate(req);
+    if (!principal) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
+    // A service-role client bypasses RLS: enforce permissions here on every request.
+    const required = req.method === "GET" ? 'read' : 'write';
+    if (!hasPermission(principal.permissions, required)) {
+      return new Response(JSON.stringify({ error: "Forbidden: insufficient API key permissions" }), {
+        status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const userId = principal.userId;
     const adminClient = createClient(supabaseUrl, serviceRoleKey);
     const url = new URL(req.url);
     const path = url.pathname.replace(/^\/functions\/v1\/ledgerflow-api/, "").replace(/^\//, "");
@@ -195,9 +207,19 @@ Deno.serve(async (req: Request) => {
     }
 
     if (req.method === "POST") {
-      const tableName = tables[path];
+      // Financial, payroll and security records require dedicated validated workflows.
+      // Generic POST is deliberately limited to master-data entities.
+      const writable: Record<string, string> = { customers: 'customers', suppliers: 'suppliers' };
+      const tableName = writable[path];
       if (tableName) {
         const body = await req.json();
+        if (!body || typeof body !== 'object' || Array.isArray(body) ||
+            typeof body.name !== 'string' || !body.name.trim() ||
+            Object.keys(body).some((key) => !['name', 'email', 'phone', 'vat_number', 'registration_number', 'address_line1', 'address_line2', 'city', 'postal_code', 'province', 'contact_person'].includes(key))) {
+          return new Response(JSON.stringify({ error: 'Invalid master-data payload' }), {
+            status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
         const { data, error } = await adminClient
           .from(tableName)
           .insert({ ...body, user_id: userId })
