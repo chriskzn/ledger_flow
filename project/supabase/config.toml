@@ -1,0 +1,2 @@
+[functions.ledgerflow-api]
+verify_jwt = false
