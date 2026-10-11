@@ -1,0 +1,134 @@
+
+> vite-react-typescript-starter@0.0.0 test
+> node --experimental-strip-types --test tests/*.test.mjs
+
+TAP version 13
+# (node:1513) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: read-only keys cannot mutate resources
+ok 1 - read-only keys cannot mutate resources
+  ---
+  duration_ms: 0.610998
+  type: 'test'
+  ...
+# Subtest: admin keys can read/write, missing permissions deny
+ok 2 - admin keys can read/write, missing permissions deny
+  ---
+  duration_ms: 0.101442
+  type: 'test'
+  ...
+# Subtest: expired and malformed key expiry rejected
+ok 3 - expired and malformed key expiry rejected
+  ---
+  duration_ms: 0.240131
+  type: 'test'
+  ...
+# (node:1514) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: 2027 primary rebate and zero threshold
+ok 4 - 2027 primary rebate and zero threshold
+  ---
+  duration_ms: 0.691919
+  type: 'test'
+  ...
+# Subtest: 2027 bracket transitions
+ok 5 - 2027 bracket transitions
+  ---
+  duration_ms: 0.132328
+  type: 'test'
+  ...
+# Subtest: 2027 age rebates
+ok 6 - 2027 age rebates
+  ---
+  duration_ms: 0.090706
+  type: 'test'
+  ...
+# Subtest: UIF contribution ceiling
+ok 7 - UIF contribution ceiling
+  ---
+  duration_ms: 0.556356
+  type: 'test'
+  ...
+1..7
+# tests 7
+# suites 0
+# pass 7
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 119.980187
+
+> test
+> node --test tests/*.test.mjs
+
+TAP version 13
+# Subtest: decimal string precision and input rejection
+ok 1 - decimal string precision and input rejection
+  ---
+  duration_ms: 0.990597
+  type: 'test'
+  ...
+# Subtest: invalid date and idempotency keys rejected
+ok 2 - invalid date and idempotency keys rejected
+  ---
+  duration_ms: 0.53297
+  type: 'test'
+  ...
+# Subtest: commit on success, release connection
+ok 3 - commit on success, release connection
+  ---
+  duration_ms: 1.043237
+  type: 'test'
+  ...
+# Subtest: rollback on error, release connection
+ok 4 - rollback on error, release connection
+  ---
+  duration_ms: 0.800963
+  type: 'test'
+  ...
+# Subtest: unbalanced manual journal cannot write any SQL
+ok 5 - unbalanced manual journal cannot write any SQL
+  ---
+  duration_ms: 1.096567
+  type: 'test'
+  ...
+# Subtest: missing account rolls back
+ok 6 - missing account rolls back
+  ---
+  duration_ms: 0.344858
+  type: 'test'
+  ...
+# Subtest: invoice rejects unsupported fractional quantity before starting transaction
+ok 7 - invoice rejects unsupported fractional quantity before starting transaction
+  ---
+  duration_ms: 0.360251
+  type: 'test'
+  ...
+# Subtest: payment amount rejects invalid negative amounts before SQL
+ok 8 - payment amount rejects invalid negative amounts before SQL
+  ---
+  duration_ms: 1.022986
+  type: 'test'
+  ...
+# Subtest: successful manual journal posts header, two lines and audit atomically
+ok 9 - successful manual journal posts header, two lines and audit atomically
+  ---
+  duration_ms: 1.230198
+  type: 'test'
+  ...
+# Subtest: replayed journal key returns existing result without new journal lines
+ok 10 - replayed journal key returns existing result without new journal lines
+  ---
+  duration_ms: 0.471969
+  type: 'test'
+  ...
+1..10
+# tests 10
+# suites 0
+# pass 10
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 61.612107
